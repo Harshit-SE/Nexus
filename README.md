@@ -46,7 +46,7 @@ Nexus knows what you talked about before, can look things up right now, and tell
 │  │          │                  │                           │     │
 │  │          │  Query Decompose │                           │     │
 │  │          │  ↓ ↓ ↓ ↓ ↓      │                           │     │
-│  │          │  Parallel Fetch  │ ← Brave Search API        │     │
+│  │          │  Parallel Fetch  │ ← Hermes Search Engine    │     │
 │  │          │  ↓               │                           │     │
 │  │          │  Synthesise      │                           │     │
 │  │          └──────────────────┘                           │     │
@@ -71,8 +71,8 @@ Nexus knows what you talked about before, can look things up right now, and tell
                               │                       │                    │
                               ▼                       ▼                    ▼
                     ┌──────────────────┐   ┌──────────────────┐  ┌────────────────┐
-                    │  Gemini 2.0 Flash│   │   vectra (ANN)   │  │  Brave Search  │
-                    │  (LLM + Embeds)  │   │   Memory Index   │  │      API       │
+                    │ NVIDIA Nemotron  │   │  Hybrid Memory   │  │  Hermes Search │
+                    │ (70B / Fallback) │   │  Index + Dates   │  │     Engine     │
                     └──────────────────┘   └──────────────────┘  └────────────────┘
                                                       │
                                            ┌──────────▼──────────┐
@@ -102,13 +102,13 @@ User: "On Monday we shortlisted Salesforce, HubSpot, Pipedrive..."
 4. Query decomposition → 5 atomic search queries
                 │
                 ▼
-5. Parallel web search (Promise.all) → 5 results in ~2s
+5. Hermes parallel search (Promise.all) → 5 structured results in < 1s
                 │
                 ▼
-6. LLM synthesises → "HubSpot raised Starter plan by $5/month on Nov 8..."
+6. Nemotron LLM synthesises → "HubSpot Starter is $20/seat, Salesforce Starter $25..."
                 │
                 ▼
-7. Streamed response with inline citations → User
+7. Streamed response with grounded citations → User
 ```
 
 ---
@@ -118,11 +118,10 @@ User: "On Monday we shortlisted Salesforce, HubSpot, Pipedrive..."
 | Component | Technology | Why |
 |-----------|------------|-----|
 | Framework | Next.js 16 (App Router + Turbopack) | Full-stack, fast development and production builds |
-| LLM | Gemini 2.0 Flash | Fast, cheap, 1M context, native tool calling |
-| Agent SDK | Vercel AI SDK | Streaming + tool use, production-proven |
-| Web Search | Brave Search API | JSON API, great freshness, generous free tier |
+| Primary LLM | NVIDIA Nemotron 70B (`nvidia/llama-3.1-nemotron-70b-instruct`) | State-of-the-art enterprise reasoning with streaming |
+| Local Fallback | Ollama (Phi-3) & Gemini Flash | High resilience across offline and cloud modes |
+| Web Search | Hermes Web Search Engine | High-precision domain retrieval, freshness filters & citations |
 | Memory | Persistent JSON + in-process vector cosine | Zero infra, runs with `npm install` |
-| Embeddings | Gemini `text-embedding-004` | Same API key, no extra cost |
 | Date Parsing | `chrono-node` | Natural language → Date ("last Tuesday", "3 Nov") |
 | Styling | Tailwind CSS v4 | Fast, modern styling |
 

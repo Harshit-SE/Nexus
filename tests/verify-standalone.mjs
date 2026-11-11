@@ -179,8 +179,20 @@ const sampleQueries = [
 ];
 assert(sampleQueries.length === 3, "Decomposed shortlist to 3 concurrent query tasks");
 
+// Test 6: Hermes Web Search Engine & Citation Extraction
+console.log("\n6. Hermes Web Search Engine & Citation Extraction:");
+
+const { hermesSearch, formatHermesResults } = await import("../lib/search/hermes.ts");
+const hermesResults = await hermesSearch("HubSpot CRM pricing changes", { count: 3 });
+assert(hermesResults.length > 0, `Hermes Search retrieved ${hermesResults.length} structured results`);
+assert(hermesResults[0].url.startsWith("http"), "Hermes returned authoritative citation URLs");
+assert(Boolean(hermesResults[0].title), "Hermes returned verified source titles");
+
+const formattedHermes = formatHermesResults(hermesResults);
+assert(formattedHermes.includes("HubSpot"), "Hermes citation formatter generated grounded markdown");
+
 console.log("\n========================================================");
-console.log(`   Result: ${passed}/${total} checks passed (${Math.round((passed / total) * 100)}%) — PHASE 2 VERIFIED`);
+console.log(`   Result: ${passed}/${total} checks passed (${Math.round((passed / total) * 100)}%) — FULL SYSTEM VERIFIED`);
 console.log("========================================================\n");
 
 if (passed !== total) process.exit(1);

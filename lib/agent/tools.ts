@@ -1,24 +1,24 @@
 // lib/agent/tools.ts
-// Tool definitions for the ReAct agent.
+// Tool definitions for the ReAct agent powered by Hermes Web Search.
 // Supports both single-query search and parallel multi-query search.
 
 import { tool } from "ai";
 import { z } from "zod";
 import {
-  braveSearch,
-  parallelSearch,
-  formatResults,
-  type Freshness,
-} from "@/lib/search/brave";
+  hermesSearch,
+  hermesParallelSearch,
+  formatHermesResults,
+  type HermesSearchOptions,
+} from "@/lib/search/hermes";
 
 /**
- * web_search — the agent's window to the live internet.
+ * web_search — powered by the Hermes real-time search engine.
  * Supports:
  * - Single query (`query: "..."`)
  * - Multi-query parallel execution (`queries: ["...", "..."]`) for comparing multiple tools/topics
  */
 export const webSearchTool = tool({
-  description: `Search the web for current, up-to-date information.
+  description: `Search the web for current, up-to-date information using the Hermes Search Engine.
 
 USE THIS TOOL when the user asks about:
 - Current prices, plans, or pricing changes for any product or service
@@ -40,7 +40,7 @@ FRESHNESS parameter guide:
       .string()
       .optional()
       .describe(
-        "Single search query. Good: 'HubSpot CRM pricing plans 2025'."
+        "Single search query. Good: 'HubSpot CRM pricing plans 2026'."
       ),
     queries: z
       .array(z.string())
@@ -68,15 +68,15 @@ FRESHNESS parameter guide:
     try {
       // 1. Multi-query parallel search
       if (queries && queries.length > 0) {
-        const resultMap = await parallelSearch(queries, {
-          freshness: freshness as Freshness | undefined,
+        const resultMap = await hermesParallelSearch(queries, {
+          freshness,
           count: 3,
         });
 
         const outputParts: string[] = [];
         for (const [q, results] of resultMap.entries()) {
           outputParts.push(
-            `### Search for: "${q}"\n` + formatResults(results, q)
+            `### Hermes Search for: "${q}"\n` + formatHermesResults(results, q)
           );
         }
         return outputParts.join("\n\n---\n\n");
@@ -88,21 +88,18 @@ FRESHNESS parameter guide:
         return "Error: Please provide a search query.";
       }
 
-      const results = await braveSearch(singleQuery, {
-        freshness: freshness as Freshness | undefined,
-        count: 6,
+      const results = await hermesSearch(singleQuery, {
+        freshness,
+        count: 5,
       });
 
       if (results.length === 0) {
         return `No search results found for "${singleQuery}". The query may be too specific. Try a broader query.`;
       }
 
-      return formatResults(results, singleQuery);
+      return formatHermesResults(results, singleQuery);
     } catch (error: any) {
-      if (error?.message === "BRAVE_RATE_LIMITED") {
-        return `Web search is temporarily rate-limited. I'll answer from my training knowledge but note it may not reflect the very latest changes. Please try again in a moment for a fresh answer.`;
-      }
-      return `Search failed: ${error?.message ?? "Unknown error"}. Please try rephrasing the query.`;
+      return `Hermes search error: ${error?.message ?? "Unknown error"}. Using grounded knowledge.`;
     }
   },
 });

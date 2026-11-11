@@ -1,10 +1,10 @@
 // app/api/chat/route.ts
-// Dual-engine ReAct agent: Local Ollama (Phi-3) + Cloud Gemini (gemini-flash-latest)
+// Production ReAct Agent: NVIDIA Nemotron + Local Ollama (Phi-3) + Hermes Web Search
 
 import { streamText, stepCountIs } from "ai";
 import { google } from "@ai-sdk/google";
-import { tools, webSearchTool } from "@/lib/agent/tools";
-import { braveSearch, formatResults } from "@/lib/search/brave";
+import { tools } from "@/lib/agent/tools";
+import { hermesSearch, formatHermesResults } from "@/lib/search/hermes";
 import { buildSystemPrompt } from "@/lib/agent/system-prompt";
 import { classifyTemporalIntent } from "@/lib/agent/temporal";
 import {
@@ -53,7 +53,12 @@ export async function POST(req: Request) {
 
     // ── 5. Setup SSE Stream Response ────────────────────────────────────────
     const encoder = new TextEncoder();
-    const useOllama = process.env.LLM_PROVIDER === "ollama";
+    const provider = process.env.LLM_PROVIDER || "nemotron";
+    const nvidiaApiKey =
+      process.env.NVIDIA_API_KEY ||
+      "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";
+    const nvidiaModel =
+      process.env.NVIDIA_MODEL || "nvidia/llama-3.1-nemotron-70b-instruct";
     const ollamaUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
     const ollamaModel = process.env.OLLAMA_MODEL || "phi3";
 
@@ -62,7 +67,7 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // A. If search is needed, run search pre-flight and stream indicator
+          // A. Hermes Search Pre-flight (for temporal & price queries)
           if (temporalIntent.needsWebSearch) {
             controller.enqueue(
               encoder.encode(
@@ -75,20 +80,97 @@ export async function POST(req: Request) {
             );
 
             try {
-              const results = await braveSearch(latestUserMessage, {
+              const results = await hermesSearch(latestUserMessage, {
                 freshness: "pw",
+                count: 5,
               });
-              const searchContent = formatResults(results, latestUserMessage);
+              const searchContent = formatHermesResults(
+                results,
+                latestUserMessage
+              );
 
-              systemPrompt += `\n\n## LIVE WEB SEARCH RESULTS (Retrieved Today):\n${searchContent}\n\nGround your answer in these results. Include source URLs.`;
+              systemPrompt += `\n\n## LIVE HERMES SEARCH RESULTS (Retrieved Today):\n${searchContent}\n\nGround your answer in these verified results and include markdown citations.`;
             } catch {
               // Non-fatal
             }
           }
 
-          // B. Attempt Local Ollama Stream if configured
-          let ollamaSucceeded = false;
-          if (useOllama) {
+          let providerSucceeded = false;
+
+          // B. Attempt NVIDIA Nemotron (if configured as primary)
+          if (provider === "nemotron" && nvidiaApiKey) {
+            try {
+              const nemoRes = await fetch(
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${nvidiaApiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: nvidiaModel,
+                    messages: [
+                      { role: "system", content: systemPrompt },
+                      ...messages.map((m: any) => ({
+                        role: m.role,
+                        content: m.content,
+                      })),
+                    ],
+                    stream: true,
+                    temperature: 0.3,
+                  }),
+                }
+              );
+
+              if (nemoRes.ok && nemoRes.body) {
+                const reader = nemoRes.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split("\n");
+                  buffer = lines.pop() ?? "";
+
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || !trimmed.startsWith("data: ")) continue;
+                    const jsonStr = trimmed.slice(6);
+                    if (jsonStr === "[DONE]") break;
+
+                    try {
+                      const parsed = JSON.parse(jsonStr);
+                      const delta = parsed.choices?.[0]?.delta?.content || "";
+                      if (delta) {
+                        fullResponseText += delta;
+                        controller.enqueue(
+                          encoder.encode(
+                            `data: ${JSON.stringify({
+                              type: "text-delta",
+                              text: delta,
+                            })}\n\n`
+                          )
+                        );
+                      }
+                    } catch {}
+                  }
+                }
+
+                if (fullResponseText.length > 0) {
+                  providerSucceeded = true;
+                }
+              }
+            } catch {
+              // Fall back to next provider
+            }
+          }
+
+          // C. Attempt Local Ollama (Phi-3) fallback
+          if (!providerSucceeded) {
             try {
               const ollamaRes = await fetch(`${ollamaUrl}/api/chat`, {
                 method: "POST",
@@ -138,15 +220,17 @@ export async function POST(req: Request) {
                     } catch {}
                   }
                 }
-                ollamaSucceeded = true;
+                if (fullResponseText.length > 0) {
+                  providerSucceeded = true;
+                }
               }
             } catch {
-              // Fall back to cloud provider if Ollama server fails
+              // Fall back
             }
           }
 
-          // C. Cloud Gemini Fallback (if Ollama is disabled or unreachable)
-          if (!ollamaSucceeded) {
+          // D. Cloud Gemini Fallback (Google AI SDK)
+          if (!providerSucceeded) {
             const result = streamText({
               model: google("gemini-flash-latest"),
               system: systemPrompt,
@@ -187,7 +271,9 @@ export async function POST(req: Request) {
 
           // Save assistant response
           if (fullResponseText) {
-            saveTurn(conversationId, "assistant", fullResponseText).catch(() => {});
+            saveTurn(conversationId, "assistant", fullResponseText).catch(
+              () => {}
+            );
           }
 
           controller.enqueue(
