@@ -27,7 +27,7 @@ export async function decomposeToQueries(
 
   // For larger or more complex cases, use LLM decomposition
   const { text } = await generateText({
-    model: google("gemini-2.0-flash"),
+    model: google("gemini-flash-latest"),
     prompt: `Generate one focused web search query per entity below, targeting: "${topic}".
 Return ONLY a JSON array of strings, nothing else.
 

@@ -36,6 +36,8 @@ Every factual claim in the response carries an inline citation URL extracted fro
 
 **Gemini 2.0 Flash over GPT-4o.** The 1-million-token context window means the agent can hold arbitrarily long conversation history without truncation. At \$0.075/1M input tokens it's effectively free for a demo. Native function calling is first-class, not prompt-engineered. And using the same provider for both LLM and embeddings means one API key, one SDK, one billing account.
 
+**Dual-Engine Architecture: Local Ollama (Phi-3) + Cloud Fallback.** Real-world agents must not break when cloud API quotas expire or when evaluating offline. Nexus supports running 100% locally on Ollama (Phi-3) with local vector embeddings (`nomic-embed-text`), with seamless cloud fallback to Gemini Flash when preferred.
+
 **Vercel AI SDK over LangChain.** LangChain is powerful but adds significant complexity, bundle weight, and abstraction layers for features this project doesn't need. The Vercel AI SDK's `streamText` + `useChat` combo handles streaming, tool call orchestration, and React state in ~20 lines. The code stays readable and I can explain every line.
 
 **Temporal intent classifier over always-searching.** Always calling the web search tool adds 500–2000ms of latency to every message. A fast regex classifier catches 90%+ of temporal signals at zero cost, so simple questions like "what's 2+2?" return instantly while "has HubSpot's pricing changed?" correctly triggers a search.

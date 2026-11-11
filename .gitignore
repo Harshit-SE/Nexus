@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local session data
+data/conversations/*.json
+!data/conversations/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

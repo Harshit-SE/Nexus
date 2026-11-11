@@ -1,28 +1,71 @@
 // lib/memory/embeddings.ts
-// Gemini text-embedding-004 wrapper — same API key as the LLM, zero extra cost.
+// Dual embedding engine: Local Ollama (nomic-embed-text) with cloud Gemini fallback.
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 let genAI: GoogleGenerativeAI | null = null;
 
-function getClient(): GoogleGenerativeAI {
+function getClient(): GoogleGenerativeAI | null {
   if (!genAI) {
     const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not set");
-    genAI = new GoogleGenerativeAI(apiKey);
+    if (apiKey) {
+      genAI = new GoogleGenerativeAI(apiKey);
+    }
   }
   return genAI;
 }
 
 /**
- * Embed a text string using Gemini text-embedding-004.
- * Returns a 768-dimensional float array.
+ * Embed text string:
+ * 1. Checks local Ollama (nomic-embed-text:latest) — instant, zero external API call
+ * 2. Falls back to Gemini embedding model
  */
 export async function embedText(text: string): Promise<number[]> {
+  // 1. Try local Ollama embedding first (fast & local)
+  try {
+    const res = await fetch("http://127.0.0.1:11434/api/embeddings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "nomic-embed-text:latest",
+        prompt: text,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.embedding) && data.embedding.length > 0) {
+        return data.embedding;
+      }
+    }
+  } catch {
+    // Fall through to cloud embedding
+  }
+
+  // 2. Fall back to Gemini cloud embedding
   const client = getClient();
-  const model = client.getGenerativeModel({ model: "text-embedding-004" });
-  const result = await model.embedContent(text);
-  return result.embedding.values;
+  if (client) {
+    try {
+      const model = client.getGenerativeModel({ model: "gemini-embedding-001" });
+      const result = await model.embedContent(text);
+      return result.embedding.values;
+    } catch {
+      // Return zero vector fallback
+    }
+  }
+
+  // 3. Fallback deterministic character n-gram pseudo-embedding if completely offline
+  return fallbackEmbedding(text, 768);
+}
+
+function fallbackEmbedding(text: string, dims = 768): number[] {
+  const vec = new Array(dims).fill(0);
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const pos = (code * 31 + i) % dims;
+    vec[pos] += 1;
+  }
+  const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0)) || 1;
+  return vec.map((v) => v / norm);
 }
 
 /**
