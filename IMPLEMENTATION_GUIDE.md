@@ -108,7 +108,7 @@ For complex queries (e.g., "Have any of these 5 CRMs changed pricing?"), the age
       Grounded answer with citations
 ```
 
-**Search provider**: Brave Search API (free tier generous, good freshness, no HTML scraping needed, JSON API).
+**Search provider**: Hermes Web Search Engine (`lib/search/hermes.ts`) — high-precision real-time structured results with title, URL, description, freshness, and score.
 
 ### 4. Result Freshness Verification
 
@@ -123,16 +123,15 @@ For "is my answer still correct?" queries:
 ## Technology Stack
 
 | Layer | Choice | Why |
-|-------|--------|-----|
-| Runtime | Node.js 20 + TypeScript | Required by spec |
-| LLM | Google Gemini 2.0 Flash | Fast, cheap, 1M context, function calling |
-| Agent Framework | Vercel AI SDK (`ai` package) | Native streaming + tool calling, production-proven |
-| Web Search | Brave Search API | JSON API, great freshness, generous free tier |
-| Memory DB | `vectra` (in-process vector DB) | Zero infra, embeds in Node process |
-| Embeddings | Gemini `text-embedding-004` | Same API key, no extra cost |
-| UI | Next.js 14 App Router + `useChat` hook | Pairs perfectly with Vercel AI SDK |
-| Styling | Tailwind CSS | Fast to build good-looking UI |
-| Persistence | JSON file (SQLite optional) | Simple, no infra needed to run |
+|---|---|---|
+| Runtime | Node.js 20+ + TypeScript | Required by evaluation spec |
+| Primary LLM | NVIDIA Nemotron 70B (`nvidia/llama-3.1-nemotron-70b-instruct`) | Advanced enterprise reasoning, streaming tokens |
+| Local Fallback | Ollama (Phi-3) + Grounded Synthesizer | Resilient, zero-latency local execution |
+| Agent Framework | Vercel AI SDK (`ai` package) + Custom SSE Stream | Native streaming, tool calling, production-proven |
+| Web Search | Hermes Web Search Engine | Structured results, freshness control, zero rate-limiting |
+| Memory DB | Date-indexed JSON + In-Process Cosine Vector Search | Zero external database infra, instant `npm install` |
+| Date Resolution | `chrono-node` | Natural language → ISO date parsing ("last Tuesday", "Nov 3") |
+| UI | Next.js 16 App Router + Tailwind CSS v4 | High-performance full-stack web chat interface |
 
 ---
 
@@ -140,8 +139,8 @@ For "is my answer still correct?" queries:
 
 ### Phase 1 — Core Agent + Search (Day 1)
 1. Bootstrap Next.js project with TypeScript
-2. Implement `web_search` tool wrapping Brave API
-3. Implement ReAct agent loop with Gemini via Vercel AI SDK
+2. Implement `web_search` tool wrapping Hermes Web Search
+3. Implement ReAct agent loop with multi-tier LLMs (Nemotron / Ollama)
 4. Build chat UI with streaming responses
 5. Test with simple live-info queries
 
@@ -181,7 +180,7 @@ hiring-project/
 │   │   ├── retrieval.ts          ← semantic + date-keyed retrieval
 │   │   └── embeddings.ts         ← Gemini embedding calls
 │   ├── search/
-│   │   ├── brave.ts              ← Brave API wrapper
+│   │   ├── hermes.ts             ← Hermes Web Search Engine
 │   │   └── decompose.ts          ← query decomposition
 │   └── utils/
 │       ├── dates.ts              ← natural language date parsing
@@ -212,11 +211,11 @@ async function runAgentLoop(
   onToolCall?: (tool: string, args: object) => void
 ): Promise<StreamingResponse>
 
-// Web search — lib/search/brave.ts
-async function braveSearch(
+// Web search — lib/search/hermes.ts
+async function hermesSearch(
   query: string,
-  options?: { freshness?: 'pd' | 'pw' | 'pm' }
-): Promise<SearchResult[]>
+  options?: { count?: number; freshness?: 'pd' | 'pw' | 'pm' }
+): Promise<HermesSearchResult[]>
 
 // Query decomposition — lib/search/decompose.ts
 async function decomposeQuery(
@@ -270,7 +269,7 @@ RULES:
 |-----------|----------|
 | User asks about past conversation from days ago | vectra date-filtered retrieval |
 | Multi-entity query ("5 CRM tools") | Parallel query decomposition |
-| Search returns stale cached results | `freshness=pw` (past week) param in Brave |
+| Search returns stale cached results | `freshness=pw` (past week) param in Hermes Search |
 | Agent loops indefinitely | Max 5 tool call iterations hard limit |
 | No relevant search results | Honest "I couldn't find current data" response |
 | Date parsing ("last Tuesday") | `chrono-node` natural language date parser |

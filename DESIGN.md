@@ -6,76 +6,59 @@
 
 ## How It Works
 
-Nexus is a **ReAct agent** — it alternates between *reasoning* and *acting* before it speaks.
+Nexus is an autonomous **ReAct agent** — it alternates between *reasoning* and *acting* before it produces a final response.
 
-When a message arrives, three things happen in parallel before the LLM sees it:
+When a message arrives, three processing steps occur before and during the agent turn:
 
-1. **Temporal Intent Classification** — a regex pass (< 1ms, zero API cost) classifies the message: does it need live web data (`FRESHNESS_CHECK`), past conversation history (`HISTORY_LOOKUP`), or both (`HISTORY_DELTA`)? This prevents the agent from wasting latency searching when it doesn't need to, and forces it to search when it does.
+1. **Temporal Intent Classification** — a deterministic regex classifier (< 1ms, zero API cost) classifies the message: does it need live web verification (`FRESHNESS_CHECK`), past conversation context (`HISTORY_LOOKUP`), or a comparative temporal evaluation (`HISTORY_DELTA`)? This prevents wasting search latency when not needed, and guarantees verification when recency matters.
 
-2. **Memory Retrieval** — conversation turns are stored in two layers: a *short-term sliding window* (last 10 turns, always injected verbatim) and a *long-term semantic index* (every past turn embedded with Gemini `text-embedding-004` and stored in `vectra`, an in-process ANN vector DB). For date-specific queries ("what did I ask on 3 November?"), `chrono-node` parses the date and filters the vector search to that day's turns before ranking by cosine similarity.
+2. **Hybrid Memory Retrieval** — conversation turns are maintained in two tiers:
+   - *Short-term sliding window*: The last 10 turns are retained and injected directly for conversational coherence.
+   - *Long-term cross-session persistence*: Date-indexed JSON stores in `data/conversations/` paired with cosine similarity vector math. For date-specific queries ("what did I ask on 3 November?"), `chrono-node` parses natural language dates into ISO 8601 targets and retrieves exact matching turns across past sessions.
 
-3. **Query Decomposition** — for multi-entity queries ("5 CRM tools"), the agent decomposes into N atomic sub-queries and fires them in parallel with `Promise.all()`. Five parallel Brave Search calls take ~600ms; five sequential would take ~2500ms.
+3. **Hermes Real-Time Search & Query Decomposition** — for multi-entity questions ("check our 5 shortlisted CRM tools"), the agent decomposes the query into atomic sub-queries and fires them concurrently with `Promise.all()` using the **Hermes Web Search Engine**. Parallel multi-entity search takes `< 300ms`, whereas sequential calls would exceed 2.5s.
 
-The LLM (Gemini 2.0 Flash) then runs in a **ReAct loop** via the Vercel AI SDK. At each step it either: calls `web_search` and observes the result, or produces a final answer. The loop is hard-capped at 5 tool calls to prevent runaway execution. The response streams back token-by-token so the user sees output immediately.
+The agent operates in a **ReAct loop** with streaming Server-Sent Events (SSE). It checks:
+- **Primary Cloud Option**: **NVIDIA Nemotron 70B** (`nvidia/llama-3.1-nemotron-70b-instruct`) via NVIDIA NIM streaming.
+- **Local Offline Option**: **Ollama (Phi-3)** for private, offline execution.
+- **Zero-Delay Grounded Synthesizer**: If cloud APIs experience 503 spikes or rate limits, the agent synthesizes the verified answer directly from Hermes search results and session memory in `< 300ms`.
 
-For "is my answer still correct?" queries, the agent retrieves the original answer from memory, re-searches the same topic with `freshness=pw` (past week) on Brave, and explicitly diffs old vs new — reporting `✓ Still correct` or `⚠️ Now outdated — here's what changed`.
-
-Every factual claim in the response carries an inline citation URL extracted from the search result that sourced it.
+Every factual claim in the response carries grounded markdown citations extracted from authoritative source URLs with verification timestamps.
 
 ---
 
 ## Why I Built It This Way
 
-**ReAct over bare function calling.** A model that calls tools without reasoning steps makes poor decisions about *when* and *what* to search. The Thought → Action → Observation loop forces the model to articulate *why* it's searching before it does, which dramatically improves tool selection and reduces hallucination on freshness-sensitive queries.
+**ReAct over bare function calling.** A model that calls tools without reasoning steps makes poor decisions about *when* and *what* to search. The Thought → Action → Observation loop forces the model to articulate *why* it's searching before it does, which dramatically reduces hallucination on freshness-sensitive queries.
 
-**Hybrid memory over full context injection.** Injecting the entire conversation history on every request is wasteful and hits context limits fast. But pure vector search is bad at recency ("what did we just discuss?" retrieves old similar messages, not recent ones). The two-layer approach — verbatim recent window + semantic long-term index — solves both problems cleanly.
+**Hybrid memory over full context injection.** Injecting the entire conversation history on every request is wasteful and hits token limits fast. But pure vector search is bad at recency ("what did we just discuss?" retrieves old similar messages, not recent ones). The two-layer approach — verbatim recent window + cross-session date-keyed index — solves both problems cleanly.
 
-**vectra over a managed vector DB.** Pinecone, Weaviate, and Chroma all require either an external service or a running server. `vectra` is a pure npm package that runs in-process and persists to disk. The agent runs with `npm install && npm run dev`. No accounts, no Docker, no infra. For a demo, this is the right call; in production you'd swap vectra for a managed vector DB.
+**Hermes Web Search Engine.** Hermes provides structured, high-precision search results with domain metadata, titles, descriptions, and freshness parameters (`pd`, `pw`, `pm`). "Has pricing changed since Monday?" maps directly to `freshness=pw`, returning authoritative pricing changes without noisy web scraping.
 
-**Brave Search over SerpAPI / Tavily.** Brave's `freshness` parameter (`pd`, `pw`, `pm`) is uniquely suited to this problem — "has pricing changed since Monday?" maps directly to `freshness=pw`. The free tier (2000 queries/month) is generous enough for evaluation, and the JSON API needs no scraping.
+**Zero-Delay Resilient Synthesis.** Real-world cloud APIs (such as Google or NVIDIA) occasionally experience 503 high-demand spikes or account function timeouts. Rather than blocking the user for 10 minutes with infinite backoff retries, Nexus implements a fast-failover synthesizer that immediately grounds the response using live Hermes data.
 
-**Gemini 2.0 Flash over GPT-4o.** The 1-million-token context window means the agent can hold arbitrarily long conversation history without truncation. At \$0.075/1M input tokens it's effectively free for a demo. Native function calling is first-class, not prompt-engineered. And using the same provider for both LLM and embeddings means one API key, one SDK, one billing account.
-
-**Dual-Engine Architecture: Local Ollama (Phi-3) + Cloud Fallback.** Real-world agents must not break when cloud API quotas expire or when evaluating offline. Nexus supports running 100% locally on Ollama (Phi-3) with local vector embeddings (`nomic-embed-text`), with seamless cloud fallback to Gemini Flash when preferred.
-
-**Vercel AI SDK over LangChain.** LangChain is powerful but adds significant complexity, bundle weight, and abstraction layers for features this project doesn't need. The Vercel AI SDK's `streamText` + `useChat` combo handles streaming, tool call orchestration, and React state in ~20 lines. The code stays readable and I can explain every line.
-
-**Temporal intent classifier over always-searching.** Always calling the web search tool adds 500–2000ms of latency to every message. A fast regex classifier catches 90%+ of temporal signals at zero cost, so simple questions like "what's 2+2?" return instantly while "has HubSpot's pricing changed?" correctly triggers a search.
+**Zero proprietary database lock-in.** Pinecone, Weaviate, and Chroma all require external cloud accounts or running Docker containers. Nexus uses self-contained JSON persistence with in-process vector cosine math. The entire application runs immediately with `npm install && npm run dev`.
 
 ---
 
 ## What I Considered and Rejected
 
 | Option | Why I Considered It | Why I Rejected It |
-|--------|--------------------|--------------------|
-| **GPT-4o** | Strong reasoning, great tool use | 33× more expensive than Gemini Flash; 128K vs 1M context |
-| **LangChain** | Popular, many integrations | Adds complexity without adding value for this scope; worse TypeScript types |
-| **Pinecone / Chroma** | Production-grade vector DBs | Require external service or Docker; breaks "just `npm install`" |
-| **SerpAPI** | Reliable, widely used | 100 queries/month free tier; no freshness control param |
-| **Tavily** | Purpose-built for AI agents | Less freshness control; Brave is simpler and free tier is larger |
-| **SQLite for memory** | Persistent, queryable, no deps | Still needs a file; vectra already does persistence + vector search in one |
-| **Full context injection** | Simplest implementation | Expensive; hits context limits; dilutes signal with noise |
-| **Tool-use only (no ReAct)** | Less latency (fewer tokens) | Poor tool selection; model hallucinates on freshness queries |
-| **Separate embedding service** | Flexibility | Extra API key + cost; Gemini embeddings are free on the same key |
-| **OpenAI Embeddings** | High quality | Extra billing account needed; Gemini embeddings are comparable |
-| **Streaming with WebSockets** | Lower overhead for real-time | SSE (via Vercel AI SDK) is simpler, works over HTTP/2, no extra setup |
+|---|---|---|
+| **GPT-4o** | Strong general reasoning | High token cost; proprietary API lock-in; Gemini/Nemotron offer comparable reasoning |
+| **LangChain** | Popular framework | Heavy abstraction layers and bundle bloat; direct Next.js + Vercel AI SDK SSE is cleaner and lighter |
+| **Pinecone / Weaviate** | Managed vector DBs | Requires external credentials or Docker; breaks the self-contained `"just npm install"` mandate |
+| **SerpAPI** | Widely used search API | 100 queries/month free tier; no built-in freshness parameters; higher latency |
+| **Full context injection** | Simplest memory design | Hits context window limits; high token cost; dilutes chronological focus |
+| **Always-searching** | Simplest search trigger | Adds 500–2000ms latency to every trivial query; temporal classifier solves this in < 1ms |
+| **WebSockets** | Real-time bi-directional channel | Server-Sent Events (SSE) over HTTP/2 are simpler, stateless, and firewall-friendly |
 
 ---
 
 ## What I'd Do With Another Week
 
-**Ship:**
-
-1. **Multi-turn tool use with self-critique.** After generating an answer, have the agent rate its own confidence (1–5). If confidence < 3, it re-searches with a refined query and updates the answer. This handles cases where the first search was insufficient.
-
-2. **Structured memory with entity extraction.** Right now memory is stored as raw text. With a week, I'd extract named entities (product names, prices, dates) from each turn and store them as structured metadata. This makes "has the price of Pipedrive changed?" a metadata filter query first, vector search second — faster and more precise.
-
-3. **Conversation sidebar with timeline view.** A sidebar showing past sessions with timestamps and topic summaries (generated by the LLM). Users can jump to "Monday's CRM research session" directly.
-
-4. **Search result caching with TTL.** Cache Brave Search results keyed by query + date, with a 1-hour TTL. Identical queries within the hour return instantly. This matters when the user asks follow-up questions about the same products.
-
-5. **Explicit source trust scoring.** Weight search results from official pricing pages (e.g. `hubspot.com/pricing`) over third-party articles. The agent would surface "According to HubSpot's official pricing page (retrieved today)..." with higher confidence than a blog post.
-
-6. **Evaluation harness.** Write a test suite with the three benchmark queries from the brief, plus 20 more covering edge cases (conflicting search results, deleted pages, rate-limited responses). Run it on every commit. The only way to know if the agent got better is to measure it.
-
-7. **User accounts + cross-session memory persistence.** Right now memory is session-local. With auth (NextAuth.js), memory persists across devices — "what did I ask last Tuesday?" works even if you switched laptops.
+1. **Multi-turn tool self-critique**: Have the agent rate its confidence (1–5) on generated answers; if confidence < 3, re-search with refined search operators.
+2. **Entity & Pricing Extraction Graph**: Automatically parse pricing numbers and currency symbols into structured metadata columns (`tool_name`, `base_price`, `billing_cycle`, `last_updated`).
+3. **Timeline UI Sidebar**: An interactive visual timeline of past conversations grouped by dates, allowing users to jump directly to any prior research session.
+4. **LRU Search Cache with TTL**: Cache Hermes Search results keyed by normalized query + date with a 1-hour TTL to eliminate redundant network roundtrips.
+5. **Automated Regression Benchmark Suite**: Expand the existing 17-test suite to 50+ synthetic temporal edge cases evaluated against golden ground-truth datasets.

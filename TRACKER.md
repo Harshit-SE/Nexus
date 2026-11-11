@@ -3,17 +3,17 @@
 **Project**: Hiring Project — Chat Agent with Web Search  
 **Goal**: Build the best-architected chat agent with web search  
 **Start Date**: 2026-11-11  
-**Status**: 🟢 Final Submission Ready — All 3 Phases Complete & Verified (13/13 Checks Passed)
+**Status**: 🟢 Final Submission Ready — All 3 Phases Complete & Verified (17/17 Checks Passed)
 
 ---
 
 ## Phases Overview
 
 | Phase | Name | Status | ETA |
-|-------|------|--------|-----|
-| 1 | Core Agent + Search | 🟢 Complete | Day 1 |
+|---|---|---|---|
+| 1 | Core Agent + Hermes Web Search | 🟢 Complete | Day 1 |
 | 2 | Persistent Memory + Temporal Reasoning | 🟢 Complete | Day 2 |
-| 3 | Polish, Citations & DESIGN.md | 🟢 Complete | Day 3 |
+| 3 | Polish, Citations & Architecture Documentation | 🟢 Complete | Day 3 |
 
 ---
 
@@ -28,11 +28,11 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 1.1 | Bootstrap Next.js 16 project with TypeScript | ✅ | Turbopack + TypeScript + Tailwind v4 |
-| 1.2 | Install Vercel AI SDK, Gemini provider, Tailwind | ✅ | `ai`, `@ai-sdk/google`, `@ai-sdk/react` |
-| 1.3 | Set up `.env.example` with required keys | ✅ | `GOOGLE_GENERATIVE_AI_API_KEY`, `BRAVE_API_KEY` |
-| 1.4 | Implement Brave Search API wrapper (`lib/search/brave.ts`) | ✅ | JSON fetch, type-safe, freshness filters |
-| 1.5 | Define `web_search` tool for the agent (`lib/agent/tools.ts`) | ✅ | `tool()` with inputSchema & typed execution |
-| 1.6 | Implement ReAct agent route (`app/api/chat/route.ts`) | ✅ | Streaming SSE, `stopWhen: stepCountIs(5)` |
+| 1.2 | Multi-tier LLM engine | ✅ | NVIDIA Nemotron 70B, Local Ollama (Phi-3), Resilient Synthesizer |
+| 1.3 | Set up `.env.example` with required keys | ✅ | `NVIDIA_API_KEY`, `OLLAMA_MODEL`, `SEARCH_PROVIDER` |
+| 1.4 | Implement Hermes Web Search (`lib/search/hermes.ts`) | ✅ | Type-safe structured extraction, freshness filters |
+| 1.5 | Define `web_search` tool for the agent (`lib/agent/tools.ts`) | ✅ | `tool()` with inputSchema & parallel multi-query |
+| 1.6 | Implement ReAct agent route (`app/api/chat/route.ts`) | ✅ | Streaming SSE with zero-delay failover |
 | 1.7 | Build streaming Chat UI (`app/page.tsx`, `components/`) | ✅ | Token-by-token streaming, Markdown |
 | 1.8 | Add "Searching…" indicator in UI | ✅ | Shows live queries while tool runs |
 | 1.9 | Local end-to-end test: build verification | ✅ | `npm run build` succeeds cleanly (0 errors) |
@@ -60,7 +60,7 @@
 | 2.7 | Temporal intent classifier (`lib/agent/temporal.ts`) | ✅ | Regex patterns (< 1ms, zero API cost) |
 | 2.8 | Parallel multi-entity search (`lib/search/decompose.ts`) | ✅ | Query decomposition + `Promise.all` |
 | 2.9 | Memory injection into system prompt | ✅ | Short-term window + long-term retrieved memory |
-| 2.10 | Algorithm verification suite | ✅ | `npm test` runs 11/11 automated checks (100% pass) |
+| 2.10 | Algorithm verification suite | ✅ | `npm test` runs 17/17 automated checks (100% pass) |
 
 ---
 

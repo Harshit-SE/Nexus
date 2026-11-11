@@ -82,14 +82,16 @@ Fast regex pre-pass (< 1ms, zero API cost) classifies user queries into temporal
 - Converts natural expressions ("last Tuesday", "on Monday", "3 November") into exact `Date` objects using `chrono-node`.
 - Enables cross-session historical lookup (`loadAllConversations()`): even if the user restarts their browser or opens a new session, date-specific queries ("What did I ask on 3 November?") seamlessly search across all persisted session JSON files to locate past conversation turns.
 
-### Algorithm 5: Multi-Entity Parallel Search Execution
+### Algorithm 5: Hermes Web Search Engine & Parallel Multi-Query Execution
 
-**Location**: `lib/agent/tools.ts` & `lib/search/decompose.ts`
+**Location**: `lib/search/hermes.ts` & `lib/agent/tools.ts`
 
 **What it does**:  
-When checking multiple items (e.g., "shortlisted 5 CRM tools... has any changed pricing?"), the tool accepts an array of `queries: string[]` and fires all searches concurrently via `Promise.all()` using `parallelSearch()`. This cuts multi-entity search latency from ~2.5s (sequential) to ~600ms (parallel).
+- Powers real-time search across authoritative domains with structured result schemas (`title`, `url`, `description`, `published`, `score`).
+- Accepts single queries or multi-entity query arrays (`queries: string[]`) and executes them concurrently using `hermesParallelSearch()` with `Promise.all()`.
+- Generates grounded markdown citations (`formatHermesResults()`) for verifiable answers.
 
-**Status**: 🟢 **Implemented & Verified** (All date formats resolve correctly in automated test suite)
+**Status**: 🟢 **Implemented & Verified** (17/17 checks passing in automated test suite)
 
 ---
 
@@ -97,20 +99,22 @@ When checking multiple items (e.g., "shortlisted 5 CRM tools... has any changed 
 
 ### Phase 1 — Core Agent + Search 🟢
 - Next.js 16 (App Router + Turbopack) initialized with TypeScript
-- ReAct agent with Gemini 2.0 Flash and Brave Search API wrapper
+- Multi-tier LLM engine: NVIDIA Nemotron 70B (`nvidia/llama-3.1-nemotron-70b-instruct`) + Local Ollama (Phi-3) + Resilient Synthesis
+- Hermes Web Search Engine integrated with structured citations
 - Custom Server-Sent Events (SSE) streaming with live `tool-call` indicators
 - Verified: `next build` generates `/` and `/api/chat` with 0 errors
 
 ### Phase 2 — Persistent Memory + Temporal Reasoning 🟢
-- Disk JSON persistence per conversation session
-- Natural language date parsing + temporal intent classification
+- Disk JSON persistence per conversation session in `data/conversations/`
+- Natural language date parsing (`chrono-node`) + temporal intent classification
 - Query decomposition for parallel multi-entity search
-- Verified: `npm test` runs 11 automated checks with 100% pass rate
+- Cross-session retrieval via `loadAllConversations()`
+- Verified: `npm test` runs 17 automated checks with 100% pass rate
 
-### Phase 3 — Polish, Citations & DESIGN.md 🟢
+### Phase 3 — Polish, Citations & Documentation 🟢
 - Markdown rendering with source card extraction & Google favicon integration
 - `DESIGN.md` written covering architecture, rationale, rejected options, and future roadmap
-- Complete `DOCUMENTATION.md`, `IMPLEMENTATION_GUIDE.md`, and `README.md`
+- Complete `DOCUMENTATION.md`, `IMPLEMENTATION_GUIDE.md`, `REPORT.md`, and `README.md`
 - Responsive dark-mode UI with copy-to-clipboard and multi-line textarea expansion
 
 ---
@@ -119,7 +123,7 @@ When checking multiple items (e.g., "shortlisted 5 CRM tools... has any changed 
 
 ```text
 ========================================================
-       NEXUS AGENT — PHASE 2 & 3 ALGORITHM VERIFICATION
+       NEXUS AGENT — PHASE 2 ALGORITHM VERIFICATION      
 ========================================================
 
 1. Benchmark Query Dataset Classification:
@@ -145,7 +149,13 @@ When checking multiple items (e.g., "shortlisted 5 CRM tools... has any changed 
 5. Parallel Query Decomposition & Result Synthesis:
   ✓ Decomposed shortlist to 3 concurrent query tasks
 
+6. Hermes Web Search Engine & Citation Extraction:
+  ✓ Hermes Search retrieved 3 structured results
+  ✓ Hermes returned authoritative citation URLs
+  ✓ Hermes returned verified source titles
+  ✓ Hermes citation formatter generated grounded markdown
+
 ========================================================
-   Result: 13/13 checks passed (100%) — ALL ALGORITHMS VERIFIED
+   Result: 17/17 checks passed (100%) — FULL SYSTEM VERIFIED
 ========================================================
 ```

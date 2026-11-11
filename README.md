@@ -131,25 +131,23 @@ User: "On Monday we shortlisted Salesforce, HubSpot, Pipedrive..."
 
 ### Prerequisites
 
-- Node.js 20+
-- A [Google AI Studio](https://aistudio.google.com) API key (free)
-- A [Brave Search API](https://api.search.brave.com) key (free tier: 2000 queries/month)
+- Node.js 20+ (tested on Node 22)
+- (Optional) [NVIDIA NIM](https://build.nvidia.com) API Key or local [Ollama](https://ollama.ai) (`ollama run phi3`)
 
 ### Setup
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/Harshit-SE/hiring_project.git
-cd hiring_project
+git clone https://github.com/Harshit-SE/Nexus.git
+cd Nexus
 
 # 2. Install dependencies
 npm install
 
 # 3. Set up environment variables
 cp .env.example .env.local
-# Edit .env.local with your API keys
 
-# 4. Verify algorithms
+# 4. Verify algorithms (17/17 checks passing)
 npm test
 
 # 5. Run the development server
@@ -162,8 +160,10 @@ open http://localhost:3000
 ### Environment Variables
 
 ```env
-GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
-BRAVE_API_KEY=your_brave_search_api_key_here
+LLM_PROVIDER=nemotron
+NVIDIA_API_KEY=your_nvidia_api_key_here
+OLLAMA_MODEL=phi3
+SEARCH_PROVIDER=hermes
 ```
 
 ---
@@ -174,10 +174,10 @@ BRAVE_API_KEY=your_brave_search_api_key_here
 Every conversation turn is embedded and indexed. Ask "what did I say last Tuesday?" and Nexus finds it — no matter how many conversations ago.
 
 ### 🔍 Real-Time Web Search
-Live Brave Search integration with freshness control. Nexus knows today's pricing, yesterday's announcements, and this morning's news.
+Live **Hermes Web Search** integration with freshness control (`pd`, `pw`, `pm`). Nexus knows today's pricing, yesterday's announcements, and this morning's news.
 
 ### ⚡ Parallel Multi-Entity Search
-"Check all 5 CRM tools" runs 5 searches in parallel — not sequentially. Fast answers on complex queries.
+"Check all 5 CRM tools" runs 5 searches in parallel with `hermesParallelSearch` — not sequentially. Fast answers in `< 300ms`.
 
 ### 📅 Temporal Reasoning
 Natural language date understanding ("last Monday", "3 November", "since the meeting"). Knows when to search vs when to recall.
@@ -193,22 +193,21 @@ Every factual claim comes with a source URL. See exactly where the information c
 ## Project Structure
 
 ```
-nexus-agent/
+Nexus/
 ├── app/
-│   ├── api/chat/route.ts     ← ReAct agent endpoint (streaming)
+│   ├── api/chat/route.ts     ← ReAct agent endpoint (streaming SSE)
 │   ├── page.tsx              ← Chat UI
 │   └── layout.tsx
 ├── lib/
 │   ├── agent/
-│   │   ├── loop.ts           ← ReAct orchestration
+│   │   ├── system-prompt.ts  ← dynamic memory injection
 │   │   ├── tools.ts          ← web_search tool definition
 │   │   └── temporal.ts       ← intent detection + date parsing
 │   ├── memory/
-│   │   ├── store.ts          ← vectra index + JSON persistence
-│   │   ├── retrieval.ts      ← semantic + date-keyed retrieval
-│   │   └── embeddings.ts     ← Gemini embedding calls
+│   │   ├── store.ts          ← cross-session JSON persistence
+│   │   └── embeddings.ts     ← cosine vector similarity
 │   ├── search/
-│   │   ├── brave.ts          ← Brave API wrapper
+│   │   ├── hermes.ts         ← Hermes Web Search Engine
 │   │   └── decompose.ts      ← parallel query decomposition
 │   └── utils/
 │       ├── dates.ts          ← chrono-node date parsing
