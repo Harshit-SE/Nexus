@@ -117,14 +117,14 @@ User: "On Monday we shortlisted Salesforce, HubSpot, Pipedrive..."
 
 | Component | Technology | Why |
 |-----------|------------|-----|
-| Framework | Next.js 14 (App Router) | Full-stack, `useChat` hook pairs perfectly |
+| Framework | Next.js 16 (App Router + Turbopack) | Full-stack, fast development and production builds |
 | LLM | Gemini 2.0 Flash | Fast, cheap, 1M context, native tool calling |
 | Agent SDK | Vercel AI SDK | Streaming + tool use, production-proven |
 | Web Search | Brave Search API | JSON API, great freshness, generous free tier |
-| Memory | vectra (in-process) | Zero infra, runs with `npm install` |
+| Memory | Persistent JSON + in-process vector cosine | Zero infra, runs with `npm install` |
 | Embeddings | Gemini `text-embedding-004` | Same API key, no extra cost |
-| Date Parsing | `chrono-node` | Natural language → Date ("last Tuesday") |
-| Styling | Tailwind CSS | Fast, great defaults |
+| Date Parsing | `chrono-node` | Natural language → Date ("last Tuesday", "3 Nov") |
+| Styling | Tailwind CSS v4 | Fast, modern styling |
 
 ---
 
@@ -140,8 +140,8 @@ User: "On Monday we shortlisted Salesforce, HubSpot, Pipedrive..."
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/yourusername/nexus-agent
-cd nexus-agent
+git clone https://github.com/Harshit-SE/hiring_project.git
+cd hiring_project
 
 # 2. Install dependencies
 npm install
@@ -150,10 +150,13 @@ npm install
 cp .env.example .env.local
 # Edit .env.local with your API keys
 
-# 4. Run the development server
+# 4. Verify algorithms
+npm test
+
+# 5. Run the development server
 npm run dev
 
-# 5. Open your browser
+# 6. Open your browser
 open http://localhost:3000
 ```
 

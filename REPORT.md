@@ -119,7 +119,7 @@ When checking multiple items (e.g., "shortlisted 5 CRM tools... has any changed 
 
 ```text
 ========================================================
-       NEXUS AGENT — ALGORITHM VERIFICATION SUITE       
+       NEXUS AGENT — PHASE 2 & 3 ALGORITHM VERIFICATION
 ========================================================
 
 1. Benchmark Query Dataset Classification:
@@ -137,11 +137,15 @@ When checking multiple items (e.g., "shortlisted 5 CRM tools... has any changed 
   ✓ Self-similarity is exactly 1.0
   ✓ Opposite vector similarity is -1.0
 
-4. Disk Persistence & Retrieval:
-  ✓ Persisted and read back 2 conversation turns
-  ✓ Persisted turn contents are intact
+4. Cross-Session Date-Keyed Memory Retrieval:
+  ✓ Found 2 matching turns from 3 November across sessions
+  ✓ Correct user question retrieved from 3 November
+  ✓ Correct assistant response retrieved from 3 November
+
+5. Parallel Query Decomposition & Result Synthesis:
+  ✓ Decomposed shortlist to 3 concurrent query tasks
 
 ========================================================
-   Result: 11/11 checks passed (100%) — ALL ALGORITHMS VERIFIED
+   Result: 13/13 checks passed (100%) — ALL ALGORITHMS VERIFIED
 ========================================================
 ```
