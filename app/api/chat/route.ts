@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
     // Long-term: semantic + date-keyed retrieval when history is needed
     let relevantMemory = recentTurns;
-    if (temporalIntent.needsHistory && messages.length > 10) {
+    if (temporalIntent.needsHistory) {
       try {
         const dateFilter = temporalIntent.referenceDate ?? undefined;
         const semanticMatches = await retrieveRelevantMemory(
@@ -74,7 +74,11 @@ export async function POST(req: Request) {
           for await (const part of result.fullStream) {
             if (part.type === "tool-call") {
               const anyPart = part as any;
-              const query = anyPart.args?.query || anyPart.input?.query || "";
+              const query =
+                anyPart.args?.query ||
+                anyPart.input?.query ||
+                (anyPart.args?.queries || anyPart.input?.queries || []).join(", ") ||
+                "";
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({

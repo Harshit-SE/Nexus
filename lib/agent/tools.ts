@@ -1,18 +1,21 @@
 // lib/agent/tools.ts
 // Tool definitions for the ReAct agent.
-// All tools are defined using Vercel AI SDK's tool() helper with Zod schemas.
+// Supports both single-query search and parallel multi-query search.
 
 import { tool } from "ai";
 import { z } from "zod";
-import { braveSearch, formatResults, type Freshness } from "@/lib/search/brave";
+import {
+  braveSearch,
+  parallelSearch,
+  formatResults,
+  type Freshness,
+} from "@/lib/search/brave";
 
 /**
  * web_search — the agent's window to the live internet.
- *
- * The description is carefully crafted to teach the LLM:
- * - WHEN to use it (freshness-sensitive questions)
- * - WHEN NOT to use it (general knowledge, math, conversation recall)
- * - HOW to use the freshness parameter
+ * Supports:
+ * - Single query (`query: "..."`)
+ * - Multi-query parallel execution (`queries: ["...", "..."]`) for comparing multiple tools/topics
  */
 export const webSearchTool = tool({
   description: `Search the web for current, up-to-date information.
@@ -23,11 +26,8 @@ USE THIS TOOL when the user asks about:
 - Whether something has changed since a specific date
 - Any fact that may have changed recently (stock prices, availability, etc.)
 
-DO NOT use this tool for:
-- General knowledge questions your training data covers well
-- Mathematical calculations
-- Questions about our conversation history (use the memory context instead)
-- Creative writing or brainstorming
+For multi-entity queries (e.g. "check these 5 CRM tools" or "compare pricing for Neon vs Supabase"):
+- Provide an array of specific queries via 'queries' to search all of them in parallel!
 
 FRESHNESS parameter guide:
 - "pd" = past day (use for "today", "this morning", breaking news)
@@ -38,8 +38,15 @@ FRESHNESS parameter guide:
   inputSchema: z.object({
     query: z
       .string()
+      .optional()
       .describe(
-        "The search query. Be specific — include the product name, version, year. Good: 'HubSpot CRM pricing plans November 2025'. Bad: 'hubspot price'."
+        "Single search query. Good: 'HubSpot CRM pricing plans 2025'."
+      ),
+    queries: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Multiple search queries to run in parallel. Use this when checking multiple tools or competitors (e.g. ['HubSpot CRM pricing changes', 'Salesforce pricing changes'])."
       ),
     freshness: z
       .enum(["pd", "pw", "pm"])
@@ -51,22 +58,46 @@ FRESHNESS parameter guide:
 
   execute: async ({
     query,
+    queries,
     freshness,
   }: {
-    query: string;
+    query?: string;
+    queries?: string[];
     freshness?: "pd" | "pw" | "pm";
   }) => {
     try {
-      const results = await braveSearch(query, {
+      // 1. Multi-query parallel search
+      if (queries && queries.length > 0) {
+        const resultMap = await parallelSearch(queries, {
+          freshness: freshness as Freshness | undefined,
+          count: 3,
+        });
+
+        const outputParts: string[] = [];
+        for (const [q, results] of resultMap.entries()) {
+          outputParts.push(
+            `### Search for: "${q}"\n` + formatResults(results, q)
+          );
+        }
+        return outputParts.join("\n\n---\n\n");
+      }
+
+      // 2. Single query search
+      const singleQuery = query || "";
+      if (!singleQuery.trim()) {
+        return "Error: Please provide a search query.";
+      }
+
+      const results = await braveSearch(singleQuery, {
         freshness: freshness as Freshness | undefined,
         count: 6,
       });
 
       if (results.length === 0) {
-        return `No search results found for "${query}". The page may not be indexed or the query may be too specific. Try a broader query.`;
+        return `No search results found for "${singleQuery}". The query may be too specific. Try a broader query.`;
       }
 
-      return formatResults(results, query);
+      return formatResults(results, singleQuery);
     } catch (error: any) {
       if (error?.message === "BRAVE_RATE_LIMITED") {
         return `Web search is temporarily rate-limited. I'll answer from my training knowledge but note it may not reflect the very latest changes. Please try again in a moment for a fresh answer.`;

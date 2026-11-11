@@ -2,6 +2,7 @@
 // Persistent conversation memory:
 // - JSON file per session (source of truth, human-readable)
 // - In-memory vector index (rebuilt from JSON on startup)
+// - Cross-session historical lookup for date-keyed queries ("what did I ask on 3 Nov?")
 
 import fs from "fs";
 import path from "path";
@@ -58,6 +59,18 @@ export function loadConversation(conversationId: string): MemoryEntry[] {
 }
 
 /**
+ * Load all turns across all stored conversation sessions on disk.
+ */
+export function loadAllConversations(): MemoryEntry[] {
+  const ids = listConversations();
+  const all: MemoryEntry[] = [];
+  for (const id of ids) {
+    all.push(...loadConversation(id));
+  }
+  return all;
+}
+
+/**
  * Save a new turn to disk and in-memory index.
  * Embedding is computed asynchronously (non-blocking) after save.
  */
@@ -86,10 +99,9 @@ export async function saveTurn(
   embedText(content)
     .then((vector) => {
       entry.vector = vector;
-      // No need to re-persist — vectors are rebuilt in memory from JSON on restart
     })
     .catch(() => {
-      // Embedding failure is non-fatal — retrieval degrades to recency only
+      // Embedding failure is non-fatal — retrieval degrades to recency/exact match
     });
 
   return entry;
@@ -105,7 +117,7 @@ export function getRecentTurns(conversationId: string, n = 10): MemoryEntry[] {
 
 /**
  * Retrieve semantically similar past turns using cosine similarity.
- * Falls back to recency if embeddings aren't ready yet.
+ * Falls back to cross-session search if dateFilter is provided.
  */
 export async function retrieveRelevantMemory(
   conversationId: string,
@@ -115,20 +127,29 @@ export async function retrieveRelevantMemory(
   const entries = loadConversation(conversationId);
   const topK = options.topK ?? 5;
 
-  // Apply date filter if provided
+  // 1. Try in current session with date filter if given
   let candidates = options.dateFilter
     ? entries.filter((e) => isSameDay(e.timestamp, options.dateFilter!))
     : entries;
 
+  // 2. If nothing found in current session and a date filter was given, search ALL sessions
+  if (candidates.length === 0 && options.dateFilter) {
+    const all = loadAllConversations();
+    candidates = all.filter((e) => isSameDay(e.timestamp, options.dateFilter!));
+  }
+
   if (candidates.length === 0) return [];
 
-  // Try semantic search if embeddings are available
+  // 3. Try semantic search if embeddings are available
   const entriesWithVectors = candidates.filter((e) => e.vector);
   if (entriesWithVectors.length > 0) {
     try {
       const queryVector = await embedText(query);
       const ranked = entriesWithVectors
-        .map((e) => ({ entry: e, score: cosineSimilarity(queryVector, e.vector!) }))
+        .map((e) => ({
+          entry: e,
+          score: cosineSimilarity(queryVector, e.vector!),
+        }))
         .sort((a, b) => b.score - a.score)
         .slice(0, topK)
         .map((r) => r.entry);
@@ -138,7 +159,7 @@ export async function retrieveRelevantMemory(
     }
   }
 
-  // Recency fallback
+  // Recency fallback within candidates
   return candidates.slice(-topK);
 }
 
